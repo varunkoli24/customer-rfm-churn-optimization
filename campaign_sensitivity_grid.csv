@@ -1,0 +1,21 @@
+gross_margin,discount,blanket_net_profit,targeted_net_profit,targeted_segments
+0.15,0.05,-252.08281503531362,8996.086856874566,"At-Risk High-Ticket (1x), At-Risk Repeat Buyers"
+0.15,0.1,-10319.65510174074,371.51715639017493,At-Risk High-Ticket (1x)
+0.15,0.15,-20387.227388446165,0.0,none - do not run
+0.15,0.2,-30454.799675151597,0.0,none - do not run
+0.2,0.05,9243.747008854723,17403.419879734563,"At-Risk High-Ticket (1x), At-Risk Repeat Buyers"
+0.2,0.1,-823.8252778507017,8566.507668029139,"At-Risk High-Ticket (1x), At-Risk Repeat Buyers"
+0.2,0.15,-10891.397564556126,0.0,none - do not run
+0.2,0.2,-20958.969851261558,0.0,none - do not run
+0.25,0.05,18739.576832744762,25810.752902594562,"At-Risk High-Ticket (1x), At-Risk Repeat Buyers"
+0.25,0.1,8672.004546039334,16973.840690889134,"At-Risk High-Ticket (1x), At-Risk Repeat Buyers"
+0.25,0.15,-1395.5677406660914,8136.928479183708,"At-Risk High-Ticket (1x), At-Risk Repeat Buyers"
+0.25,0.2,-11463.14002737152,0.0,none - do not run
+0.3,0.05,28235.4066566348,34218.085925454565,"At-Risk High-Ticket (1x), At-Risk Repeat Buyers"
+0.3,0.1,18167.834369929373,25381.173713749133,"At-Risk High-Ticket (1x), At-Risk Repeat Buyers"
+0.3,0.15,8100.262083223948,16544.261502043708,"At-Risk High-Ticket (1x), At-Risk Repeat Buyers"
+0.3,0.2,-1967.3102034814815,7707.349290338278,"At-Risk High-Ticket (1x), At-Risk Repeat Buyers"
+0.35,0.05,37731.23648052483,42625.41894831455,"At-Risk High-Ticket (1x), At-Risk Repeat Buyers"
+0.35,0.1,27663.664193819404,33788.506736609124,"At-Risk High-Ticket (1x), At-Risk Repeat Buyers"
+0.35,0.15,17596.09190711398,24951.5945249037,"At-Risk High-Ticket (1x), At-Risk Repeat Buyers"
+0.35,0.2,7528.51962040855,16114.68231319827,"At-Risk High-Ticket (1x), At-Risk Repeat Buyers"

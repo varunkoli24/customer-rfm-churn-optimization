@@ -1,0 +1,3 @@
+scenario,segments,customers_contacted,outreach_cost,discount_cost,incremental_revenue,net_incremental_profit,roi_pct
+Blanket 15% discount to all inactive customers,"At-Risk High-Ticket (1x), Hibernating / Low-Value (1x), At-Risk Repeat Buyers",37344,18672.0,30202.716860116278,159713.8796176845,8100.262083223948,16.573522270026867
+Targeted offer only where it pays back,"At-Risk High-Ticket (1x), At-Risk Repeat Buyers",14778,7389.0,26510.73663511628,141635.92382208369,16544.261502043708,48.8035104228678
