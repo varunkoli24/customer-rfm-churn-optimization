@@ -2,6 +2,17 @@
 Customer Retention, RFM Segmentation & Win-Back Campaign ROI Pipeline
 Dataset: Brazilian E-Commerce Public Dataset by Olist
 Tools: SQLite, pandas, numpy
+
+Inputs
+    olist_customers_dataset.csv, olist_orders_dataset.csv,
+    olist_order_payments_dataset.csv   (download from Kaggle, see README)
+    backtest_baseline.csv              (committed; precomputed 14-snapshot
+                                        organic 30-day repurchase rates)
+
+Outputs (regenerated on every run)
+    rfm_customers.csv (git-ignored), segment_summary.csv, cohort_retention.csv,
+    campaign_economics.csv, campaign_comparison.csv, campaign_sensitivity.csv,
+    campaign_sensitivity_grid.csv, inactive_segment_spend.csv
 """
 
 import sqlite3
@@ -24,6 +35,9 @@ OFFER_CONVERSION = {
 }
 
 INACTIVE_SEGMENTS = list(OFFER_CONVERSION.keys())
+
+# Conversion stress test: actual offer conversion as a multiple of the assumption
+CONVERSION_MULTIPLIERS = (0.50, 0.75, 1.00, 1.25, 1.50)
 
 
 def build_sqlite_db(conn: sqlite3.Connection) -> None:
@@ -72,13 +86,18 @@ def evaluate_campaign(
     discount: float = DISCOUNT,
     gross_margin: float = GROSS_MARGIN,
     outreach_cost: float = OUTREACH_COST,
+    conversion_multiplier: float = 1.0,
 ) -> pd.DataFrame:
-    """Compute segment-level win-back campaign economics and break-even thresholds."""
+    """Compute segment-level win-back campaign economics and break-even thresholds.
+
+    conversion_multiplier scales the assumed offer conversion (1.0 = planning
+    assumption) and is used by the stress test.
+    """
     df = seg_summary[seg_summary["inactive"]].copy()
     baseline_map = backtest_df.set_index("segment")["baseline_30d_rate"].to_dict()
 
     df["baseline_conv"] = df["segment"].map(baseline_map)
-    df["offer_conv"] = df["segment"].map(OFFER_CONVERSION)
+    df["offer_conv"] = df["segment"].map(OFFER_CONVERSION) * conversion_multiplier
     df["extra_orders"] = df["customers"] * (df["offer_conv"] - df["baseline_conv"])
     df["outreach_cost"] = df["customers"] * outreach_cost
     df["discount_cost"] = df["customers"] * df["offer_conv"] * df["aov"] * discount
@@ -109,6 +128,67 @@ def evaluate_campaign(
     return df
 
 
+def build_campaign_comparison(econ_df: pd.DataFrame) -> pd.DataFrame:
+    """Blanket (all inactive segments) vs. targeted (segments that pay back) roll-up."""
+    targeted_df = econ_df[econ_df["target"]]
+    return pd.DataFrame(
+        [
+            {
+                "scenario": "Blanket 15% discount to all inactive customers",
+                "segments": ", ".join(econ_df["segment"].tolist()),
+                "customers_contacted": int(econ_df["customers"].sum()),
+                "outreach_cost": econ_df["outreach_cost"].sum(),
+                "discount_cost": econ_df["discount_cost"].sum(),
+                "incremental_revenue": econ_df["incremental_revenue"].sum(),
+                "net_incremental_profit": econ_df["net_incremental_profit"].sum(),
+                "roi_pct": 100.0
+                * econ_df["net_incremental_profit"].sum()
+                / econ_df["campaign_cost"].sum(),
+            },
+            {
+                "scenario": "Targeted offer only where it pays back",
+                "segments": ", ".join(targeted_df["segment"].tolist()),
+                "customers_contacted": int(targeted_df["customers"].sum()),
+                "outreach_cost": targeted_df["outreach_cost"].sum(),
+                "discount_cost": targeted_df["discount_cost"].sum(),
+                "incremental_revenue": targeted_df["incremental_revenue"].sum(),
+                "net_incremental_profit": targeted_df["net_incremental_profit"].sum(),
+                "roi_pct": 100.0
+                * targeted_df["net_incremental_profit"].sum()
+                / targeted_df["campaign_cost"].sum(),
+            },
+        ]
+    )
+
+
+def build_conversion_stress_test(
+    seg_summary: pd.DataFrame,
+    backtest_df: pd.DataFrame,
+    multipliers: tuple = CONVERSION_MULTIPLIERS,
+) -> pd.DataFrame:
+    """Net profit if real offer conversion lands at a multiple of the assumption.
+
+    The targeted list is fixed at the segments that pay back under the planning
+    assumptions (a team picks its target list before it sees real conversion),
+    so a targeted segment can turn negative in a stress case.
+    """
+    base = evaluate_campaign(seg_summary, backtest_df)
+    targeted_segments = base.loc[base["target"], "segment"]
+    rows = []
+    for mult in multipliers:
+        econ = evaluate_campaign(seg_summary, backtest_df, conversion_multiplier=mult)
+        rows.append(
+            {
+                "actual_conversion_vs_assumed": f"{mult:.2f}x",
+                "blanket_net_profit": econ["net_incremental_profit"].sum(),
+                "targeted_net_profit": econ.loc[
+                    econ["segment"].isin(targeted_segments), "net_incremental_profit"
+                ].sum(),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def build_sensitivity_grid(
     seg_summary: pd.DataFrame, backtest_df: pd.DataFrame
 ) -> pd.DataFrame:
@@ -137,7 +217,36 @@ def build_sensitivity_grid(
     return pd.DataFrame(rows)
 
 
+def build_inactive_segment_spend(
+    seg_summary: pd.DataFrame, backtest_df: pd.DataFrame
+) -> pd.DataFrame:
+    """Historical spend of each inactive segment vs. its expected organic 30-day revenue."""
+    df = seg_summary[seg_summary["inactive"]].copy()
+    rate = df["segment"].map(backtest_df.set_index("segment")["baseline_30d_rate"])
+    out = pd.DataFrame(
+        {
+            "segment": df["segment"],
+            "customers": df["customers"],
+            "pct_customers": df["pct_customers"],
+            "historical_spend": df["total_spend"],
+            "pct_of_historical_revenue": df["pct_revenue"],
+            "historical_spend_per_customer": df["spend_per_customer"],
+            "aov": df["aov"],
+            "avg_recency_days": df["avg_recency_days"],
+            "organic_repurchase_30d_pct": 100.0 * rate,
+            "expected_organic_revenue_30d": df["customers"] * rate * df["aov"],
+        }
+    )
+    return out.reset_index(drop=True)
+
+
 def main() -> None:
+    if not Path("backtest_baseline.csv").exists():
+        raise FileNotFoundError(
+            "backtest_baseline.csv is a committed input (14-snapshot organic 30-day "
+            "repurchase baselines). Download it from the repository."
+        )
+
     conn = sqlite3.connect(DB_PATH)
     try:
         build_sqlite_db(conn)
@@ -149,50 +258,39 @@ def main() -> None:
     rfm_df.to_csv("rfm_customers.csv", index=False)
     cohort_df.to_csv("cohort_retention.csv", index=False)
 
+    # "Inactive" = bottom two recency quintiles (r_score <= 2). It is relative to the
+    # customer base, so the 40% share is a property of the definition. Guard that the
+    # segment labels and the quintile rule agree, and report the equivalent day cutoff.
+    inactive_rfm = rfm_df[rfm_df["r_score"] <= 2]
+    assert (rfm_df["segment"].isin(INACTIVE_SEGMENTS) == (rfm_df["r_score"] <= 2)).all(), (
+        "Inactive segments no longer match r_score <= 2; update INACTIVE_SEGMENTS."
+    )
+    print(
+        f"'Inactive' = bottom two recency quintiles: {len(inactive_rfm):,} customers "
+        f"({100.0 * len(inactive_rfm) / len(rfm_df):.2f}% of {len(rfm_df):,}); "
+        f"last order at least {inactive_rfm['recency_days'].min():.0f} days before the "
+        f"reference date."
+    )
+
     seg_summary = build_segment_summary(rfm_df)
     seg_summary.to_csv("segment_summary.csv", index=False)
 
-    # Load 14-snapshot backtest baselines and run campaign economics
+    # Load 14-snapshot backtest baselines (precomputed) and run campaign economics
     backtest_df = pd.read_csv("backtest_baseline.csv")
     econ_df = evaluate_campaign(seg_summary, backtest_df)
     econ_df.to_csv("campaign_economics.csv", index=False)
 
-    # Blanket vs. Targeted roll-up
-    targeted_df = econ_df[econ_df["target"]]
-    comparison_df = pd.DataFrame(
-        [
-            {
-                "scenario": "Blanket 15% discount to all inactive customers",
-                "segments": ", ".join(econ_df["segment"].tolist()),
-                "customers_contacted": int(econ_df["customers"].sum()),
-                "outreach_cost": econ_df["outreach_cost"].sum(),
-                "discount_cost": econ_df["discount_cost"].sum(),
-                "incremental_revenue": econ_df["incremental_revenue"].sum(),
-                "net_incremental_profit": econ_df["net_incremental_profit"].sum(),
-                "roi_pct": 100.0
-                * econ_df["net_incremental_profit"].sum()
-                / econ_df["campaign_cost"].sum(),
-            },
-            {
-                "scenario": "Targeted offer only where it pays back",
-                "segments": ", ".join(targeted_df["segment"].tolist()),
-                "customers_contacted": int(targeted_df["customers"].sum()),
-                "outreach_cost": targeted_df["outreach_cost"].sum(),
-                "discount_cost": targeted_df["discount_cost"].sum(),
-                "incremental_revenue": targeted_df["incremental_revenue"].sum(),
-                "net_incremental_profit": targeted_df["net_incremental_profit"].sum(),
-                "roi_pct": 100.0
-                * targeted_df["net_incremental_profit"].sum()
-                / targeted_df["campaign_cost"].sum(),
-            },
-        ]
+    build_campaign_comparison(econ_df).to_csv("campaign_comparison.csv", index=False)
+    build_conversion_stress_test(seg_summary, backtest_df).to_csv(
+        "campaign_sensitivity.csv", index=False
     )
-    comparison_df.to_csv("campaign_comparison.csv", index=False)
-
-    # 5x4 Gross Margin x Discount sensitivity grid
-    grid_df = build_sensitivity_grid(seg_summary, backtest_df)
-    grid_df.to_csv("campaign_sensitivity_grid.csv", index=False)
-    print("Pipeline complete. All analytical CSVs generated.")
+    build_sensitivity_grid(seg_summary, backtest_df).to_csv(
+        "campaign_sensitivity_grid.csv", index=False
+    )
+    build_inactive_segment_spend(seg_summary, backtest_df).to_csv(
+        "inactive_segment_spend.csv", index=False
+    )
+    print("Pipeline complete. All analytical CSVs generated (backtest_baseline.csv is a committed input).")
 
 
 if __name__ == "__main__":
